@@ -123,13 +123,13 @@ class LlamaServerBackend(AIBackend):
                         # 处理推理内容（思考模式）[reference:9]
                         if 'reasoning_content' in delta:
                             reasoning = delta['reasoning_content']
-                            if reasoning and reasoning.strip():
+                            if reasoning:
                                 yield {"type": "thinking", "content": reasoning}
 
                         # 处理普通内容
                         if 'content' in delta:
                             content = delta['content']
-                            if content is not None and content.strip():
+                            if content is not None:
                                 yield {"type": "content", "content": content}
 
                     except json.JSONDecodeError:

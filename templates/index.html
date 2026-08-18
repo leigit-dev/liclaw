@@ -557,6 +557,13 @@
                 transform: rotate(360deg);
             }
         }
+        /* 正在执行的卡片高亮 */
+        /* 正在执行的卡片 - 四周亮绿色光晕 */
+        .tool-card.executing {
+            box-shadow: 0 0 3px rgba(34, 197, 94, 0.6); /* 绿色发光 */
+            border: 2px solid #22c55e; /* 亮绿色边框 */
+            transition: box-shadow 0.1s, border 0.1s;
+        }
     </style>
 </head>
 <body>
@@ -775,16 +782,16 @@
         }
 
         function parseCommandFromText(text) {
-            // 支持单双引号
-            // const regex = /<toolcall\s+tool="([^"]+)"(?:\s+args=(["\'])([^"\']*?)\2)?\s*>(.*?)<\/toolcall>/s;
-            // const match = regex.exec(text);
-            // if (match) {
-            //     return {
-            //         tool: match[1],
-            //         argv: match[3] || '{}',
-            //         content: (match[4] || '').trim()
-            //     };
-            // }
+            // 支持单双引号，DOTALL 跨行匹配
+            const regex = /<toolcall\s+tool="([^"]+)"(?:\s+args=(["\'])([^"\']*?)\2)?\s*>(.*?)<\/toolcall>/s;
+            const match = regex.exec(text);
+            if (match) {
+                return {
+                    tool: match[1],
+                    argv: match[3] || '{}',
+                    content: (match[4] || '').trim()
+                };
+            }
             if (text.includes('<-----FINISH----->')) return { finish: true };
             return null;
         }
@@ -876,6 +883,19 @@
             updateStatusBar();
 
             return cardId;
+        }
+        function highlightAndScroll(cardId) {
+            const state = cardStates.get(cardId);
+            if (!state) return;
+
+            const cardEl = state.cardElement;
+            // 移除所有卡片的高亮
+            document.querySelectorAll('.tool-card.executing').forEach(el => el.classList.remove('executing'));
+            // 为当前卡片添加高亮
+            cardEl.classList.add('executing');
+
+            // 滚动到卡片（平滑居中）
+            cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
 
         // =====================================================================
@@ -1064,6 +1084,7 @@
             }
 
             for (const cardId of cardIds) {
+                highlightAndScroll(cardId);
                 const state = cardStates.get(cardId);
                 if (!state) {
                     completed++;
@@ -1096,6 +1117,12 @@
                     `<span class="progress-text" style="color:#22c55e;">✅ 所有卡片执行完成 (${total} 个)</span>`;
                 sssfinished=true
             }
+            if (sessionState.statusBar) {
+                sessionState.statusBar.innerHTML =
+                    `<span class="progress-text" style="color:#22c55e;">✅ 所有卡片执行完成 (${total} 个)</span>`;
+            }
+            // 移除所有高亮
+            document.querySelectorAll('.tool-card.executing').forEach(el => el.classList.remove('executing'));
 
             // 判断是否收到 finish
             const hasFinish = sessionState.finishReceived || sessionState.rawBuffer.includes('<-----FINISH----->');
@@ -1215,7 +1242,7 @@
 
                 const thinkingDiv = document.createElement('div');
                 thinkingDiv.className = 'thinking-block';
-                thinkingDiv.innerHTML = '<blockquote>🤔 思考中…</blockquote>';
+                thinkingDiv.innerHTML = '<blockquote>思考中…</blockquote>';
                 bubble.appendChild(thinkingDiv);
                 sessionState.thinkingDiv = thinkingDiv;
 

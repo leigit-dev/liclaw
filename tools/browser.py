@@ -132,19 +132,70 @@ def _collect_interactive_elements(page: Page) -> Dict[str, str]:
     return desc_map
 
 
+def _get_current_page() -> Page:
+    """获取当前浏览器的最新活动页面（自动处理新标签页）"""
+    global _browser, _page
+    if _browser is None:
+        raise RuntimeError("浏览器未启动")
+    # 获取所有页面（上下文中的页面列表）
+    pages = _browser.contexts[0].pages if _browser.contexts else []
+    if not pages:
+        return _ensure_browser()  # 如果无页面，重新创建
+    # 返回最后一个（最新打开的）页面
+    current = pages[-1]
+    # 如果当前页面与全局 _page 不同，更新 _page
+    if current != _page:
+        _page = current
+        _ref_map.clear()  # 新页面需要重新获取引用
+    return _page
+
 tooltips = """
 ## 浏览器控制模块 (browser)
-- **browser.open**：打开指定 URL（默认 Edge 显示窗口）
-  - args: {"url": "https://...", "headless": true}（可选，设为 true 则无头）
-  - 示例: <toolcall tool="browser.open" args='{"url":"https://baidu.com"}'></toolcall>
-- **browser.snapshot**：获取可交互元素快照
+- **browser.open**：打开 URL
+  - args: {"url": "https://...", "headless": false}
+  - 示例: <toolcall tool="browser.open" args='{"url":"https://www.qq.com"}'></toolcall>
+
+- **browser.snapshot**：获取可交互元素列表（分配 @eN 引用）
   - args: {"interactive_only": true}
-- **browser.click**：点击元素，args: {"ref": "@e1"}
-- **browser.fill**：填写输入框，args: {"ref": "@e2", "text": "内容"}
-- **browser.get_text**：获取元素文本，args: {"ref": "@e3"}
-- **browser.wait**：等待页面状态，args: {"state": "networkidle", "timeout": 30000}
-- **browser.close**：关闭浏览器，args: {}
-- **browser.go_back**、**browser.go_forward**、**browser.refresh**、**browser.screenshot** 等
+  - 示例: <toolcall tool="browser.snapshot" args='{"interactive_only":true}'></toolcall>
+
+- **browser.click**：点击元素（通过 @eN）
+  - args: {"ref": "@e1"}
+  - 示例: <toolcall tool="browser.click" args='{"ref":"@e5"}'></toolcall>
+
+- **browser.fill**：填写输入框
+  - args: {"ref": "@e2", "text": "内容"}
+  - 示例: <toolcall tool="browser.fill" args='{"ref":"@e2","text":"人工智能"}'></toolcall>
+
+- **browser.get_text**：获取元素文本
+  - args: {"ref": "@e3"}
+  - 示例: <toolcall tool="browser.get_text" args='{"ref":"@e10"}'></toolcall>
+
+- **browser.wait**：等待页面加载
+  - args: {"state": "networkidle", "timeout": 30000}
+  - 示例: <toolcall tool="browser.wait" args='{"state":"networkidle"}'></toolcall>
+
+- **browser.close**：关闭浏览器
+  - args: {}
+  - 示例: <toolcall tool="browser.close" args='{}'></toolcall>
+
+- **browser.go_back**：后退一页
+  - args: {}
+  - 示例: <toolcall tool="browser.go_back" args='{}'></toolcall>
+
+- **browser.go_forward**：前进一页
+  - args: {}
+  - 示例: <toolcall tool="browser.go_forward" args='{}'></toolcall>
+
+- **browser.refresh**：刷新当前页面
+  - args: {}
+  - 示例: <toolcall tool="browser.refresh" args='{}'></toolcall>
+
+- **browser.screenshot**：截图（保存文件或返回 base64）
+  - args: {"path": "screenshot.png"}（可选）
+  - 示例: <toolcall tool="browser.screenshot" args='{"path":"page.png"}'></toolcall>
+
+需要注意的是，当刷新、后退、前进、点击元素、填写输入框等操作后，页面可能会发生变化，之前分配的 @eN 引用可能失效。在每次操作后需要重新执行 snapshot 以获取最新的可交互元素列表。
 """
 
 
