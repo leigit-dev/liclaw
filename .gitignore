@@ -1,3 +1,6 @@
-/aicall
+/aicall/backends/deepseek_deepseekv4_flash.py
+/aicall/backends/nim_deepseekv4.py
+/aicall/backends/nim_gemma.py
 /chat
 /__pycache__
+/**/__pycache__
