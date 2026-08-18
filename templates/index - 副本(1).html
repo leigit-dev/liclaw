@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI 自主执行助手</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        :root {
+            --bg-body: #f1f5f9;
+            --bg-sidebar: #ffffff;
+            --bg-chat: #ffffff;
+            --bg-msg-user: #2563eb;
+            --bg-msg-assistant: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --border-light: #e2e8f0;
+            --shadow-card: 0 2px 8px rgba(0,0,0,0.04);
+            --blue-accent: #2563eb;
+            --blue-hover: #1d4ed8;
+            --radius-card: 16px;
+            --radius-bubble: 20px;
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+        }
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-body);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+            color: var(--text-primary);
+        }
+        .sidebar {
+            width: 280px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border-light);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        .sidebar-header {
+            padding: 20px 16px 12px;
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            gap: 8px;
+        }
+        .sidebar-header button {
+            flex: 1;
+            padding: 8px 0;
+            border: none;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .new-chat-btn { background: var(--blue-accent); color: #fff; }
+        .new-chat-btn:hover { background: var(--blue-hover); }
+        .stop-task-btn { background: #ef4444; color: #fff; }
+        .stop-task-btn:disabled { background: #cbd5e1; color: #94a3b8; cursor: not-allowed; }
+        .sessions-list {
+            flex: 1;
+            padding: 12px 8px;
+            overflow-y: auto;
+        }
+        .session-item {
+            padding: 10px 14px;
+            border-radius: 12px;
+            margin-bottom: 4px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.1s;
+            font-size: 14px;
+        }
+        .session-item:hover { background: #f8fafc; }
+        .session-item.active { background: #eef2ff; border-left: 4px solid var(--blue-accent); }
+        .session-title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-weight: 500;
+        }
+        .session-delete {
+            opacity: 0;
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            color: var(--text-muted);
+            padding: 0 4px;
+        }
+        .session-item:hover .session-delete { opacity: 1; }
+
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .toolbar {
+            background: var(--bg-sidebar);
+            padding: 10px 24px;
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .toolbar .backend-selector { display: flex; gap: 10px; align-items: center; }
+        .toolbar select, .toolbar button {
+            padding: 6px 14px;
+            border-radius: 40px;
+            border: 1px solid var(--border-light);
+            background: #fff;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .toolbar select:focus, .toolbar button:focus { outline: none; border-color: var(--blue-accent); }
+        .thinking-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        .thinking-toggle input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--blue-accent);
+        }
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px 32px;
+            background: var(--bg-chat);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .message {
+            display: flex;
+            gap: 12px;
+            max-width: 92%;
+            animation: fadeIn 0.25s ease;
+        }
+        .message.user { align-self: flex-end; flex-direction: row-reverse; }
+        .message.assistant { align-self: flex-start; }
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+            flex-shrink: 0;
+            color: var(--text-secondary);
+        }
+        .message.user .avatar { background: var(--blue-accent); color: #fff; }
+        .bubble {
+            padding: 14px 20px;
+            border-radius: var(--radius-bubble);
+            line-height: 1.6;
+            word-break: break-word;
+            min-width: 0;
+        }
+        .message.assistant .bubble {
+            background: var(--bg-msg-assistant);
+            border: 1px solid var(--border-light);
+            box-shadow: var(--shadow-card);
+        }
+        .message.user .bubble { background: var(--bg-msg-user); color: #fff; }
+
+        /* 思考块 */
+        .thinking-block {
+            color: var(--text-secondary);
+            font-size: 0.95em;
+            margin-bottom: 12px;
+            white-space: pre-wrap;
+        }
+        .thinking-block blockquote {
+            border-left: 3px solid #94a3b8;
+            padding-left: 16px;
+            margin: 6px 0;
+            color: var(--text-muted);
+        }
+
+        /* 助手普通文本 */
+        .assistant-text {
+            white-space: pre-wrap;
+            margin-bottom: 12px;
+            line-height: 1.7;
+        }
+
+        /* 工具卡片 */
+        .tool-card {
+            background: #f8fafc;
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius-card);
+            margin: 12px 0 6px;
+            overflow: hidden;
+            box-shadow: var(--shadow-card);
+        }
+        .tool-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 16px;
+            background: #f1f5f9;
+            border-bottom: 1px solid var(--border-light);
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+        .tool-card-header .tool-name { display: flex; align-items: center; gap: 8px; }
+        .tool-card-header .tool-name code {
+            background: #e2e8f0;
+            padding: 2px 10px;
+            border-radius: 40px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .tool-card-header .actions { display: flex; gap: 6px; }
+        .tool-card-header .actions button {
+            background: none;
+            border: none;
+            font-size: 13px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 40px;
+        }
+        .tool-card-header .actions button:hover { background: #e2e8f0; }
+
+        .tool-card-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border-light);
+            background: #fff;
+            padding: 0 16px;
+        }
+        .tool-card-tabs button {
+            background: none;
+            border: none;
+            padding: 10px 16px 8px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: color 0.1s, border-color 0.1s;
+        }
+        .tool-card-tabs button.active {
+            color: var(--blue-accent);
+            border-bottom-color: var(--blue-accent);
+        }
+        .tool-card-tabs button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .tool-card-tabs button:hover:not(:disabled) { color: var(--text-primary); }
+
+        .tool-card-body { padding: 16px; background: #fff; }
+        .tool-card-body .tab-panel { display: none; }
+        .tool-card-body .tab-panel.active { display: block; }
+
+        .tool-card-body table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .tool-card-body table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: top;
+        }
+        .tool-card-body table td:first-child {
+            font-weight: 500;
+            color: var(--text-secondary);
+            width: 30%;
+        }
+        .tool-card-body table td:last-child {
+            font-family: var(--font-mono);
+            font-size: 13px;
+            word-break: break-all;
+        }
+
+        .tool-card-body .content-box {
+            margin-top: 12px;
+            background: #f8fafc;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .result-box {
+            background: #0f172a;
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+            min-height: 60px;
+        }
+        .result-box .status-line { color: #94a3b8; font-style: italic; }
+
+        .tool-card-footer {
+            padding: 12px 16px;
+            background: #f8fafc;
+            border-top: 1px solid var(--border-light);
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+        .tool-card-footer button {
+            padding: 6px 20px;
+            border: none;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-execute {
+            background: var(--blue-accent);
+            color: #fff;
+        }
+        .btn-execute:hover { background: var(--blue-hover); }
+        .btn-execute:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-reject {
+            background: #f1f5f9;
+            color: var(--text-secondary);
+        }
+        .btn-reject:hover { background: #e2e8f0; }
+        .btn-reject:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* 模态框 */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+        }
+        .modal-box {
+            background: #fff;
+            border-radius: var(--radius-card);
+            padding: 24px;
+            max-width: 700px;
+            width: 90%;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+        }
+        .modal-box h3 { margin-bottom: 12px; font-weight: 600; }
+        .modal-box textarea {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            font-family: var(--font-mono);
+            font-size: 14px;
+            resize: vertical;
+            min-height: 120px;
+        }
+        .modal-box .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 16px;
+        }
+        .modal-box .modal-actions button {
+            padding: 8px 24px;
+            border: none;
+            border-radius: 40px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .modal-box .modal-actions .btn-confirm { background: var(--blue-accent); color: #fff; }
+        .modal-box .modal-actions .btn-cancel { background: #f1f5f9; color: var(--text-secondary); }
+
+        .input-area {
+            background: #fff;
+            padding: 16px 24px;
+            border-top: 1px solid var(--border-light);
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        .input-area textarea {
+            flex: 1;
+            padding: 10px 16px;
+            border: 1px solid var(--border-light);
+            border-radius: 40px;
+            resize: none;
+            font-family: inherit;
+            font-size: 15px;
+            max-height: 120px;
+        }
+        .input-area textarea:focus { outline: none; border-color: var(--blue-accent); }
+        .input-area #sendBtn {
+            padding: 10px 28px;
+            border-radius: 40px;
+            font-weight: 600;
+            background: var(--blue-accent);
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s;
+            white-space: nowrap;
+        }
+        .input-area #sendBtn:hover { background: var(--blue-hover); }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 12px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <!-- 侧边栏 -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <button class="new-chat-btn" id="newChatBtn">＋ 新对话</button>
+            <button class="stop-task-btn" id="stopTaskBtn" disabled>⏹ 停止</button>
+        </div>
+        <div class="sessions-list" id="sessionsList"></div>
+    </div>
+
+    <!-- 主区域 -->
+    <div class="main">
+        <div class="toolbar">
+            <div class="backend-selector">
+                <select id="backendSelect"><option value="">选择后端…</option></select>
+                <button id="preheatBtn" style="display:none;">🔥 预热</button>
+            </div>
+            <label class="thinking-toggle">
+                <input type="checkbox" id="enableThinking" /> 深度思考
+            </label>
+        </div>
+        <div class="chat-container" id="chatContainer">
+            <div class="message assistant">
+                <div class="avatar">AI</div>
+                <div class="bubble">欢迎！请先选择后端，然后开始任务。</div>
+            </div>
+        </div>
+        <div class="input-area">
+            <textarea id="taskInput" placeholder="输入任务，例如：打开百度搜索今日热点并总结…" rows="2"></textarea>
+            <button id="sendBtn">发送</button>
+        </div>
+    </div>
+
+    <script>
+        // =====================================================================
+        // 1. DOM 引用与全局状态
+        // =====================================================================
+        const chatContainer = document.getElementById('chatContainer');
+        const taskInput = document.getElementById('taskInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const backendSelect = document.getElementById('backendSelect');
+        const preheatBtn = document.getElementById('preheatBtn');
+        const enableThinkingCheck = document.getElementById('enableThinking');
+        const newChatBtn = document.getElementById('newChatBtn');
+        const stopTaskBtn = document.getElementById('stopTaskBtn');
+        const sessionsListDiv = document.getElementById('sessionsList');
+
+        let currentSessionId = null;
+        let isTaskRunning = false;
+        let stopRequested = false;
+        let currentEventSource = null;
+
+        const cardStates = new Map();
+        let cardIdCounter = 0;
+
+        // =====================================================================
+        // 2. 辅助函数
+        // =====================================================================
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function addMessage(role, contentOrNode) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${role}`;
+            const avatar = document.createElement('div');
+            avatar.className = 'avatar';
+            avatar.textContent = role === 'user' ? '我' : 'AI';
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            if (typeof contentOrNode === 'string') bubble.textContent = contentOrNode;
+            else bubble.appendChild(contentOrNode);
+            msgDiv.appendChild(avatar);
+            msgDiv.appendChild(bubble);
+            chatContainer.appendChild(msgDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return bubble;
+        }
+
+        function createAssistantBubble() {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message assistant';
+            const avatar = document.createElement('div');
+            avatar.className = 'avatar';
+            avatar.textContent = 'AI';
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            msgDiv.appendChild(avatar);
+            msgDiv.appendChild(bubble);
+            chatContainer.appendChild(msgDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return bubble;
+        }
+
+        // =====================================================================
+        // 3. 后端管理与会话管理
+        // =====================================================================
+        async function loadBackends() {
+            const resp = await fetch('/api/backends');
+            const backends = await resp.json();
+            backendSelect.innerHTML = '<option value="">选择后端…</option>';
+            for (const b of backends) {
+                const opt = document.createElement('option');
+                opt.value = b.name;
+                opt.textContent = b.name;
+                opt.dataset.supportsPreheat = b.supports_preheat;
+                backendSelect.appendChild(opt);
+            }
+        }
+        backendSelect.addEventListener('change', async () => {
+            const name = backendSelect.value;
+            if (!name) return;
+            const opt = backendSelect.options[backendSelect.selectedIndex];
+            preheatBtn.style.display = opt.dataset.supportsPreheat === 'true' ? 'inline-block' : 'none';
+            await fetch('/api/load_backend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            alert(`已切换到 ${name}`);
+        });
+        preheatBtn.addEventListener('click', async () => {
+            await fetch('/api/preheat', { method: 'POST' });
+            alert('预热完成');
+        });
+
+        async function loadSessions() {
+            const resp = await fetch('/api/sessions');
+            const sessions = await resp.json();
+            sessionsListDiv.innerHTML = '';
+            for (const sess of sessions) {
+                const div = document.createElement('div');
+                div.className = `session-item ${currentSessionId === sess.id ? 'active' : ''}`;
+                div.innerHTML = `
+                    <span class="session-title">${escapeHtml(sess.title)}</span>
+                    <button class="session-delete" data-id="${sess.id}">🗑</button>
+                `;
+                div.querySelector('.session-title').addEventListener('click', () => switchSession(sess.id));
+                div.querySelector('.session-delete').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteSession(sess.id);
+                });
+                sessionsListDiv.appendChild(div);
+            }
+        }
+
+        async function switchSession(sessionId) {
+            if (currentSessionId === sessionId) return;
+            if (isTaskRunning && !confirm('任务运行中，切换会停止任务。确定？')) return;
+            if (currentEventSource) { currentEventSource.close(); currentEventSource = null; }
+            stopTask();
+            currentSessionId = sessionId;
+            chatContainer.innerHTML = '';
+            const resp = await fetch(`/api/session/${sessionId}`);
+            const messages = await resp.json();
+            for (const msg of messages) addMessage(msg.role, msg.content);
+            loadSessions();
+        }
+
+        async function deleteSession(sessionId) {
+            if (!confirm('删除会话？')) return;
+            await fetch(`/api/session/${sessionId}`, { method: 'DELETE' });
+            if (currentSessionId === sessionId) {
+                currentSessionId = null;
+                chatContainer.innerHTML = '';
+                addMessage('assistant', '会话已删除，请新建对话。');
+            }
+            loadSessions();
+        }
+
+        async function newSession() {
+            if (isTaskRunning && !confirm('任务运行中，新建会停止任务。确定？')) return;
+            if (currentEventSource) currentEventSource.close();
+            stopTask();
+            const resp = await fetch('/api/session/new', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: '新对话' })
+            });
+            const data = await resp.json();
+            currentSessionId = data.session_id;
+            chatContainer.innerHTML = '';
+            addMessage('assistant', '新对话已创建。');
+            loadSessions();
+        }
+
+        // =====================================================================
+        // 4. 卡片渲染
+        // =====================================================================
+        function renderToolCard(bubble, command, rawXml, onDecision) {
+            const cardId = 'card-' + (++cardIdCounter);
+
+            let argvHtml = '';
+            let argvError = null;
+            try {
+                const argvObj = JSON.parse(command.argv);
+                if (Object.keys(argvObj).length === 0) {
+                    argvHtml = '<div style="color:var(--text-muted);">（无参数）</div>';
+                } else {
+                    let rows = '';
+                    for (const [key, val] of Object.entries(argvObj)) {
+                        const valStr = typeof val === 'object' ? JSON.stringify(val) : String(val);
+                        rows += `<tr><td>${escapeHtml(key)}</td><td>${escapeHtml(valStr)}</td></tr>`;
+                    }
+                    argvHtml = `<table>${rows}</table>`;
+                }
+            } catch (e) {
+                argvError = e.message;
+                argvHtml = `
+                    <div style="color:#b91c1c;margin-bottom:8px;">⚠️ 参数解析失败: ${escapeHtml(argvError)}</div>
+                    <div style="font-family:monospace;font-size:13px;background:#f1f5f9;padding:8px;border-radius:6px;">${escapeHtml(command.argv)}</div>
+                `;
+            }
+
+            const contentHtml = command.content ?
+                `<div style="margin-top:12px;font-weight:500;font-size:13px;color:var(--text-secondary);">📄 内容：</div>
+                 <div class="content-box">${escapeHtml(command.content)}</div>` :
+                '';
+
+            const cardHtml = `
+                <div class="tool-card" data-card-id="${cardId}">
+                    <div class="tool-card-header">
+                        <span class="tool-name">🔧 <code>${escapeHtml(command.tool)}</code></span>
+                        <div class="actions">
+                            <button class="btn-edit-source" data-card-id="${cardId}">✎ 源码</button>
+                        </div>
+                    </div>
+                    <div class="tool-card-tabs">
+                        <button class="tab-btn active" data-card-id="${cardId}" data-tab="detail">📋 命令详情</button>
+                        <button class="tab-btn" data-card-id="${cardId}" data-tab="result" disabled>📊 执行结果</button>
+                    </div>
+                    <div class="tool-card-body">
+                        <div class="tab-panel active" data-tab="detail">
+                            ${argvHtml}
+                            ${contentHtml}
+                        </div>
+                        <div class="tab-panel" data-tab="result">
+                            <div class="result-box" id="result-${cardId}">
+                                <span class="status-line">等待执行…</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tool-card-footer">
+                        <button class="btn-execute" data-card-id="${cardId}">▶ 执行</button>
+                        <button class="btn-reject" data-card-id="${cardId}">✕ 拒绝</button>
+                    </div>
+                </div>
+            `;
+
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = cardHtml;
+            const cardElement = tempDiv.firstElementChild;
+            bubble.appendChild(cardElement);
+
+            cardStates.set(cardId, {
+                command: command,
+                rawXml: rawXml,
+                resolved: false,
+                isExecuting: false,
+                resultContainer: document.getElementById(`result-${cardId}`),
+                onDecision: onDecision,
+                cardElement: cardElement,
+                execBtn: cardElement.querySelector('.btn-execute'),
+                rejectBtn: cardElement.querySelector('.btn-reject'),
+                tabDetail: cardElement.querySelector('.tab-btn[data-tab="detail"]'),
+                tabResult: cardElement.querySelector('.tab-btn[data-tab="result"]'),
+            });
+
+            return cardId;
+        }
+
+        // =====================================================================
+        // 5. 事件委托
+        // =====================================================================
+        chatContainer.addEventListener('click', (e) => {
+            const target = e.target.closest('button');
+            if (!target) return;
+
+            const cardId = target.dataset.cardId;
+            if (!cardId) return;
+            const state = cardStates.get(cardId);
+            if (!state) return;
+
+            // 切换标签
+            if (target.classList.contains('tab-btn')) {
+                const tab = target.dataset.tab;
+                const cardEl = state.cardElement;
+                cardEl.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                target.classList.add('active');
+                cardEl.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+                cardEl.querySelector(`.tab-panel[data-tab="${tab}"]`).classList.add('active');
+                return;
+            }
+
+            // 源码编辑
+            if (target.classList.contains('btn-edit-source')) {
+                showSourceEditor(cardId);
+                return;
+            }
+
+            // 执行
+            if (target.classList.contains('btn-execute')) {
+                if (state.resolved || state.isExecuting) return;
+                state.resolved = true;
+                state.isExecuting = true;
+                state.execBtn.disabled = true;
+                state.rejectBtn.disabled = true;
+                state.tabResult.disabled = false;
+                state.tabResult.click(); // 切换到结果
+                const resultBox = state.resultContainer;
+                resultBox.innerHTML = '<span class="status-line">⏳ 执行中…</span>';
+                resultBox.style.color = '#e2e8f0';
+                state.onDecision(cardId, true);
+                return;
+            }
+
+            // 拒绝
+            if (target.classList.contains('btn-reject')) {
+                if (state.resolved) return;
+                state.resolved = true;
+                state.execBtn.disabled = true;
+                state.rejectBtn.disabled = true;
+                state.onDecision(cardId, false);
+            }
+        });
+
+        // 源码编辑模态框
+        function showSourceEditor(cardId) {
+            const state = cardStates.get(cardId);
+            if (!state) return;
+
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            const modal = document.createElement('div');
+            modal.className = 'modal-box';
+            modal.innerHTML = `
+                <h3>✏️ 修改命令源码</h3>
+                <textarea id="sourceEditor-${cardId}">${escapeHtml(state.rawXml)}</textarea>
+                <div class="modal-actions">
+                    <button class="btn-cancel" data-card-id="${cardId}">取消</button>
+                    <button class="btn-confirm" data-card-id="${cardId}">重新解析</button>
+                </div>
+            `;
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            const editor = modal.querySelector('textarea');
+            const confirmBtn = modal.querySelector('.btn-confirm');
+            const cancelBtn = modal.querySelector('.btn-cancel');
+
+            const closeModal = () => overlay.remove();
+
+            confirmBtn.addEventListener('click', () => {
+                const newRaw = editor.value;
+                const newCmd = parseCommandFromText(newRaw);
+                if (newCmd && !newCmd.finish) {
+                    const bubble = state.cardElement.parentNode;
+                    if (!bubble) { closeModal(); return; }
+                    state.cardElement.remove();
+                    cardStates.delete(cardId);
+                    const onDecision = state.onDecision;
+                    const newCardId = renderToolCard(bubble, newCmd, newRaw, onDecision);
+                    closeModal();
+                } else {
+                    alert('解析失败，请检查 XML 格式是否正确。');
+                }
+            });
+
+            cancelBtn.addEventListener('click', closeModal);
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+        }
+
+        // =====================================================================
+        // 6. 命令解析
+        // =====================================================================
+        function parseCommandFromText(text) {
+            const regex = /<toolcall\s+tool=(?:["\'])([^"\']*?)(?:["\'])(?:\s+args=(["\'])((?:[^\\]|\\.)*?)\2)?\s*>(.*?)</toolcall>/s/；
+            const match = regex.exec(text);
+            if (match) {
+                return {
+                    tool: match[1],
+                    argv: match[3] || '{}',
+                    content: (match[4] || '').trim()
+                };
+            }
+            if (text.includes('<finish/>')) return { finish: true };
+            return null;
+        }
+
+        // =====================================================================
+        // 7. 流式执行命令（收集输出）
+        // =====================================================================
+        async function executeCommandAndUpdateCard(cardId, commandObj) {
+            return new Promise((resolve) => {
+                const state = cardStates.get(cardId);
+                if (!state) { resolve(''); return; }
+                const resultBox = state.resultContainer;
+                let output = '';
+
+                fetch('/api/execute_command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command: commandObj })
+                }).then(response => {
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+
+                    function read() {
+                        reader.read().then(({ done, value }) => {
+                            if (done) {
+                                resolve(output);
+                                return;
+                            }
+                            const chunk = decoder.decode(value, { stream: true });
+                            buffer += chunk;
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop() || '';
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    const payload = line.slice(6);
+                                    if (payload === '[DONE]') {
+                                        resolve(output);
+                                        return;
+                                    }
+                                    try {
+                                        const event = JSON.parse(payload);
+                                        if (event.type === 'output') {
+                                            if (resultBox.textContent.includes('等待执行') || resultBox.textContent.includes('执行中')) {
+                                                resultBox.textContent = '';
+                                            }
+                                            resultBox.textContent += event.content + '\n';
+                                            resultBox.scrollTop = resultBox.scrollHeight;
+                                            output += event.content + '\n';
+                                        } else if (event.type === 'error') {
+                                            resultBox.textContent += '错误：' + event.message + '\n';
+                                            resultBox.style.color = '#f87171';
+                                            output += '错误：' + event.message + '\n';
+                                        }
+                                    } catch (e) {}
+                                }
+                            }
+                            read();
+                        }).catch(err => {
+                            output += '读取流错误：' + err.message;
+                            resolve(output);
+                        });
+                    }
+                    read();
+                }).catch(err => {
+                    output = '请求失败：' + err.message;
+                    resolve(output);
+                });
+            });
+        }
+
+        // =====================================================================
+        // 8. 添加结果到会话
+        // =====================================================================
+        async function addResultToSession(commandObj, success, output) {
+            await fetch('/api/add_result', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: currentSessionId,
+                    command: `${commandObj.tool} ${commandObj.argv}`,
+                    success: success,
+                    output: output
+                })
+            });
+        }
+
+        // =====================================================================
+        // 9. 生成命令 + 展示 + 等待决策
+        // =====================================================================
+        function generateCommandWithUI() {
+            return new Promise((resolve) => {
+                const bubble = createAssistantBubble();
+
+                // 思考区域
+                const thinkingDiv = document.createElement('div');
+                thinkingDiv.className = 'thinking-block';
+                thinkingDiv.innerHTML = '<blockquote>🤔 思考中…</blockquote>';
+                bubble.appendChild(thinkingDiv);
+
+                // 普通文本显示区域
+                const textDiv = document.createElement('div');
+                textDiv.className = 'assistant-text';
+                textDiv.style.whiteSpace = 'pre-wrap';
+                textDiv.style.marginBottom = '12px';
+                bubble.appendChild(textDiv);
+
+                let thinkingBuffer = '';
+                let rawBuffer = '';
+                let cardId = null;
+                let resolved = false;
+
+                const enableThinking = enableThinkingCheck.checked;
+                const url = `/api/generate_command/${currentSessionId}?thinking=${enableThinking}`;
+                const es = new EventSource(url);
+                currentEventSource = es;
+
+                function onCardDecision(cId, approved) {
+                    if (resolved) return;
+                    resolved = true;
+                    es.close();
+                    currentEventSource = null;
+                    const state = cardStates.get(cId);
+                    if (state) {
+                        resolve({ command: state.command, cardId: cId, approved });
+                    } else {
+                        resolve(null);
+                    }
+                }
+
+                es.onmessage = (event) => {
+                    if (event.data === '[DONE]') {
+                        es.close();
+                        currentEventSource = null;
+                        const cleanText = textDiv.textContent.replace(/<[\/]?toolcall[^>]*>/g, '');
+                        if (cleanText) {
+                            textDiv.textContent = cleanText;
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
+                        }
+                        if (!cardId) {
+                            const parsed = parseCommandFromText(rawBuffer);
+                            if (parsed && parsed.finish) {
+                                thinkingDiv.innerHTML = '<blockquote>✅ 任务完成</blockquote>';
+                                resolve(null);
+                            } else if (!parsed) {
+                                thinkingDiv.innerHTML = '<blockquote style="color:#b91c1c;">⚠️ 无法解析命令，请检查模型输出。</blockquote>';
+                                resolve(null);
+                            }
+                        }
+                        return;
+                    }
+
+                    try {
+                        const msg = JSON.parse(event.data);
+                        if (msg.type === 'thinking') {
+                            thinkingBuffer += msg.content;
+                            const lines = thinkingBuffer.split('\n');
+                            const quoted = lines.map(line => `${line}`).join('\n');
+                            thinkingDiv.innerHTML = `<blockquote>${escapeHtml(quoted)}</blockquote>`;
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
+                        } else if (msg.type === 'partial') {
+                            // 过滤掉工具标签，显示纯文本
+                            const cleanText = msg.content//.replace(/<[\/]?toolcall[^>]*>/g, '');
+                            if (cleanText) {
+                                textDiv.textContent += cleanText;
+                                chatContainer.scrollTop = chatContainer.scrollHeight;
+                            }
+                            rawBuffer += msg.content;
+                        } else if (msg.type === 'command') {
+                            if (msg.command) {
+                                if (cardId) return;
+                                const parsedCmd = msg.command;
+                                cardId = renderToolCard(bubble, parsedCmd, rawBuffer, onCardDecision);
+                            } else {
+                                thinkingDiv.innerHTML = '<blockquote>✅ 任务完成，正在生成总结…</blockquote>';
+                                resolve(null);
+                                es.close();
+                            }
+                        } else if (msg.type === 'error') {
+                            thinkingDiv.innerHTML = `<blockquote style="color:#b91c1c;">❌ 错误: ${escapeHtml(msg.message)}</blockquote>`;
+                            es.close();
+                            resolve(null);
+                        }
+                    } catch (e) {
+                        console.warn('解析事件失败', e);
+                    }
+                };
+
+                es.onerror = (err) => {
+                    console.error('SSE 连接错误', err);
+                    es.close();
+                    currentEventSource = null;
+                    thinkingDiv.innerHTML = '<blockquote style="color:#b91c1c;">❌ 连接中断，命令生成失败。</blockquote>';
+                    resolve(null);
+                };
+            });
+        }
+
+        // =====================================================================
+        // 10. 主任务循环
+        // =====================================================================
+        async function startTaskLoop(initialMessage) {
+            const resp = await fetch('/execute/message', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: initialMessage, session_id: currentSessionId })
+            });
+            const data = await resp.json();
+            currentSessionId = data.session_id;
+            loadSessions();
+            isTaskRunning = true;
+            stopRequested = false;
+            stopTaskBtn.disabled = false;
+
+            while (isTaskRunning && !stopRequested && currentSessionId) {
+                const result = await generateCommandWithUI();
+                if (result === null) break;
+                const { command, cardId, approved } = result;
+                if (!approved) {
+                    await addResultToSession(command, false, '用户拒绝执行该命令。');
+                    continue;
+                }
+
+                // 执行并收集完整输出
+                const output = await executeCommandAndUpdateCard(cardId, command);
+                await addResultToSession(command, true, output);
+            }
+
+            if (stopRequested) addMessage('assistant', '⏹️ 任务已停止。');
+            isTaskRunning = false;
+            stopTaskBtn.disabled = true;
+        }
+
+        // =====================================================================
+        // 11. 停止任务
+        // =====================================================================
+        function stopTask() {
+            stopRequested = true;
+            if (currentEventSource) { currentEventSource.close(); currentEventSource = null; }
+            if (currentSessionId) fetch(`/execute/stop/${currentSessionId}`, { method: 'POST' }).catch(() => {});
+            isTaskRunning = false;
+            stopTaskBtn.disabled = true;
+        }
+
+        // =====================================================================
+        // 12. 发送消息
+        // =====================================================================
+        async function sendMessage() {
+            const message = taskInput.value.trim();
+            if (!message || isTaskRunning) return;
+            taskInput.value = '';
+            addMessage('user', message);
+            if (!currentSessionId) await newSession();
+            await startTaskLoop(message);
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        taskInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+        newChatBtn.addEventListener('click', newSession);
+        stopTaskBtn.addEventListener('click', stopTask);
+
+        // =====================================================================
+        // 13. 初始化
+        // =====================================================================
+        loadBackends();
+        loadSessions();
+        setTimeout(async () => {
+            const resp = await fetch('/api/sessions');
+            const sessions = await resp.json();
+            if (sessions.length > 0 && !currentSessionId) await switchSession(sessions[0].id);
+        }, 500);
+    </script>
+</body>
+</html>
