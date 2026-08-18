@@ -19,7 +19,7 @@ class LlamaServerBackend(AIBackend):
         self.api_key = "no-key"  # llama-server 默认不验证 API Key[reference:3]
 
         # 默认生成参数
-        self.default_max_tokens = 512
+        self.default_max_tokens = 16384
         self.default_temperature = 0.7
         self.default_top_p = 0.9
         self.default_top_k = 40
