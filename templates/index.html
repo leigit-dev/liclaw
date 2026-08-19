@@ -562,7 +562,7 @@
         .tool-card.executing {
             box-shadow: 0 0 3px rgba(34, 197, 94, 0.6); /* 绿色发光 */
             border: 2px solid #22c55e; /* 亮绿色边框 */
-            transition: box-shadow 0.1s, border 0.1s;
+            transition: box-shadow 0.2s, border 0.2s;
         }
     </style>
 </head>
@@ -571,7 +571,7 @@
     <div class="sidebar">
         <div class="sidebar-header">
             <button class="new-chat-btn" id="newChatBtn">＋ 新对话</button>
-            <button class="stop-task-btn" id="stopTaskBtn" disabled>⏹ 停止</button>
+            
         </div>
         <div class="sessions-list" id="sessionsList"></div>
     </div>
@@ -583,9 +583,7 @@
                 <select id="backendSelect"><option value="">选择后端…</option></select>
                 <button id="preheatBtn" style="display:none;">🔥 预热</button>
             </div>
-            <label class="thinking-toggle">
-                <input type="checkbox" id="enableThinking" /> 深度思考
-            </label>
+            
         </div>
         <div class="chat-container" id="chatContainer">
             <div class="message assistant">
@@ -596,6 +594,10 @@
         <div class="input-area">
             <textarea id="taskInput" placeholder="输入任务，例如：打开百度搜索今日热点并总结…" rows="2"></textarea>
             <button id="sendBtn">发送</button>
+            <button class="stop-task-btn" id="stopTaskBtn" disabled>⏹ 停止</button>
+            <label class="thinking-toggle">
+                <input type="checkbox" id="enableThinking" /> 深度思考
+            </label>
         </div>
     </div>
 
@@ -963,7 +965,7 @@
                 cardEl.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
                 cardEl.querySelector('.tab-panel[data-tab="result"]').classList.add('active');
                 const resultBox = state.resultContainer;
-                resultBox.innerHTML = '<span class="status-line">⏳ 执行中…</span>';
+                resultBox.innerHTML = '<span class="status-line">⏳ 等待执行…</span>';
                 resultBox.style.color = '#e2e8f0';
             } else {
                 // 显示拒绝状态
@@ -1311,7 +1313,7 @@
                         } else if (msg.type === 'partial') {
                             if (msg.content) {
                                 // 显示普通文本（过滤掉 toolcall 标签）
-                                const cleanText = msg.content.replace(/<[\/]?toolcall[^>]*>/g, '');
+                                //const cleanText = msg.content.replace(/<[\/]?toolcall[^>]*>/g, '');
                                 if (cleanText) {
                                     textDiv.textContent += cleanText;
                                     chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -1325,7 +1327,7 @@
                                 const rawXml = buildRawXmlFromCommand(parsedCmd);
                                 renderToolCard(bubble, parsedCmd, rawXml);
                                 chatContainer.scrollTop = chatContainer.scrollHeight;
-                            } else {
+                            } else if (rawBuffer.includes('<-----FINISH----->')){
                                 // 收到 finish
                                 sessionState.finishReceived = true;
                                 thinkingDiv.innerHTML = '<blockquote>✅ 任务完成</blockquote>';
