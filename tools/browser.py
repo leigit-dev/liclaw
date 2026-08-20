@@ -20,6 +20,7 @@ _channel = "msedge"
 
 
 def _ensure_browser() -> Page:
+    """确保浏览器已启动并返回当前页面（旧页面或新页面，由调用者决定）"""
     global _playwright, _browser, _page, _ref_map
     with _global_lock:
         if _page is not None:
@@ -71,6 +72,30 @@ def _close_browser():
     _ref_map.clear()
 
 
+def _get_current_page() -> Page:
+    """
+    获取当前浏览器的最新活动页面（自动处理新标签页）。
+    注意：此函数仅用于需要主动切换页面时调用，不应在每次操作前无条件调用，
+    否则可能因对象比较问题导致 _ref_map 被误清空。
+    """
+    global _browser, _page, _ref_map
+    if _browser is None:
+        raise RuntimeError("浏览器未启动")
+    pages = _browser.contexts[0].pages if _browser.contexts else []
+    if not pages:
+        return _ensure_browser()
+    current = pages[-1]
+
+    # 仅在 _page 为空、已关闭或 URL 发生实际变化时才更新
+    if _page is None or _page.is_closed():
+        _page = current
+        _ref_map.clear()
+    elif current.url != _page.url:
+        _page = current
+        _ref_map.clear()
+    return _page
+
+
 def _get_element_by_ref(ref: str) -> ElementHandle:
     if ref not in _ref_map:
         raise ValueError(f"元素引用 {ref} 不存在，请先执行 snapshot")
@@ -78,6 +103,7 @@ def _get_element_by_ref(ref: str) -> ElementHandle:
 
 
 def _collect_interactive_elements(page: Page) -> Dict[str, str]:
+    """收集页面可交互元素，返回 ref -> 描述 的字典，并更新 _ref_map"""
     result = page.evaluate("""
         () => {
             function getXPath(element) {
@@ -123,7 +149,6 @@ def _collect_interactive_elements(page: Page) -> Dict[str, str]:
         desc = item['desc']
         desc_map[ref] = desc
         try:
-            # 注意：element_handle() 是方法，需要加括号
             handle = page.locator(f"xpath={xpath}").element_handle()
             if handle:
                 _ref_map[ref] = handle
@@ -131,23 +156,6 @@ def _collect_interactive_elements(page: Page) -> Dict[str, str]:
             pass
     return desc_map
 
-
-def _get_current_page() -> Page:
-    """获取当前浏览器的最新活动页面（自动处理新标签页）"""
-    global _browser, _page
-    if _browser is None:
-        raise RuntimeError("浏览器未启动")
-    # 获取所有页面（上下文中的页面列表）
-    pages = _browser.contexts[0].pages if _browser.contexts else []
-    if not pages:
-        return _ensure_browser()  # 如果无页面，重新创建
-    # 返回最后一个（最新打开的）页面
-    current = pages[-1]
-    # 如果当前页面与全局 _page 不同，更新 _page
-    if current != _page:
-        _page = current
-        _ref_map.clear()  # 新页面需要重新获取引用
-    return _page
 
 tooltips = """
 ## 浏览器控制模块 (browser)
@@ -200,7 +208,7 @@ tooltips = """
 
 
 def execute(instruction: str, args: Dict[str, Any], content: str = "") -> Generator[str, None, None]:
-    global _headless
+    global _headless, _page, _ref_map
     try:
         if instruction == "close":
             _close_browser()
@@ -220,6 +228,7 @@ def execute(instruction: str, args: Dict[str, Any], content: str = "") -> Genera
             yield f"已打开 {url}（浏览器: {_channel}，headless={_headless}）"
             return
 
+        # 对于除 open/close 外的所有操作，确保浏览器已启动并获取当前页面
         page = _ensure_browser()
         if page is None:
             yield "错误：浏览器未启动，请先执行 open"
@@ -248,8 +257,30 @@ def execute(instruction: str, args: Dict[str, Any], content: str = "") -> Genera
                 return
             try:
                 elem = _get_element_by_ref(ref)
+                # 点击前记录页面数量和当前 URL
+                pages_before = _browser.contexts[0].pages if _browser.contexts else []
+                url_before = page.url
+
                 elem.click()
-                yield f"已点击 {ref}"
+
+                # 检测是否有新标签页打开
+                pages_after = _browser.contexts[0].pages if _browser.contexts else []
+                if len(pages_after) > len(pages_before):
+                    # 新标签页已打开，切换到最新页面
+                    _page = pages_after[-1]
+                    _ref_map.clear()
+                    # 等待新页面加载完成（可选）
+                    try:
+                        _page.wait_for_load_state("networkidle", timeout=5000)
+                    except Exception:
+                        pass
+                    yield f"已点击 {ref}，检测到新标签页并已切换。请重新执行 snapshot 获取新页面元素。"
+                else:
+                    # 没有新标签页，但可能发生了页面内导航
+                    # 点击后不立即清空引用，但可以提示用户如页面变化需重新 snapshot
+                    # 为避免误清空，这里不自动清空，除非 URL 发生变化
+                    # 我们可以在下一次 snapshot 时自动检测（snapshot 内部会重建引用）
+                    yield f"已点击 {ref}。如果页面内容发生变化，请重新执行 snapshot。"
             except Exception as e:
                 yield f"点击失败：{str(e)}"
             return
@@ -275,7 +306,7 @@ def execute(instruction: str, args: Dict[str, Any], content: str = "") -> Genera
                 return
             try:
                 elem = _get_element_by_ref(ref)
-                text = elem.inner_text()  # 加括号
+                text = elem.inner_text()
                 yield f"{ref} 的文本：{text}"
             except Exception as e:
                 yield f"获取文本失败：{str(e)}"
@@ -294,24 +325,27 @@ def execute(instruction: str, args: Dict[str, Any], content: str = "") -> Genera
         if instruction == "go_back":
             try:
                 page.go_back()
-                yield "已后退"
+                yield "已后退，请重新执行 snapshot 获取新元素"
             except Exception as e:
                 yield f"后退失败：{str(e)}"
             return
+
         if instruction == "go_forward":
             try:
                 page.go_forward()
-                yield "已前进"
+                yield "已前进，请重新执行 snapshot 获取新元素"
             except Exception as e:
                 yield f"前进失败：{str(e)}"
             return
+
         if instruction == "refresh":
             try:
                 page.reload()
-                yield "已刷新"
+                yield "已刷新，请重新执行 snapshot 获取新元素"
             except Exception as e:
                 yield f"刷新失败：{str(e)}"
             return
+
         if instruction == "screenshot":
             path = args.get("path")
             try:

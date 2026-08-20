@@ -558,10 +558,13 @@
     }
 
     .toggle-row {
+      /* position: absolute; */
       display: flex;
       justify-content: flex-start;
       align-items: center;
       padding-left: 4px;
+      right: 6%;
+      bottom: 1%;
     }
     .thinking-toggle {
       display: flex;
@@ -672,6 +675,7 @@
         <button id="sendBtn">发送</button>
         <button class="stop-task-btn" id="stopTaskBtn" disabled>⏹</button>
       </div>
+
       <div class="toggle-row">
         <label class="thinking-toggle">
           <input type="checkbox" id="enableThinking" /> 深度思考
@@ -865,18 +869,24 @@
 
         function parseCommandFromText(text) {
             // 支持单双引号，DOTALL 跨行匹配
-            const regex = /<toolcall\s+tool="([^"]+)"(?:\s+args=(["\'])([^"\']*?)\2)?\s*>(.*?)<\/toolcall>/s;
+            const regex = /<toolcall\s+tool=(["\'])([^"\']+)\1(?:\s+args=(["\'])((?:[^\\]|\\.)*?)\3)?\s*>(.*?)<\/toolcall>/s;
             const match = regex.exec(text);
             if (match) {
                 return {
-                    tool: match[1],
-                    argv: match[3] || '{}',
-                    content: (match[4] || '').trim()
+              tool: match[2],
+              argv: match[4] || '{}',
+              content: (match[5] || '').trim()
                 };
             }
-            if (text.includes('<-----FINISH----->')) return { finish: true };
+            //if (text.includes('<-----FINISH----->')) return { finish: true };
             return null;
         }
+
+          function formatStreamText(text) {
+            // 只替换已经闭合的 toolcall，未完成的标签保留原样等待下一段流。
+            const completeToolcall = /<toolcall\s+tool=(["\'])([^"\']+)\1(?:\s+args=(["\'])((?:[^\\]|\\.)*?)\3)?\s*>(.*?)<\/toolcall>/gs;
+            return text.replace(completeToolcall, (_, quote, tool) => `指令：${tool}`);
+          }
 
         // =====================================================================
         // 5. 渲染工具卡片（使用事件委托，不使用内联 onclick）
@@ -1211,7 +1221,7 @@
 
             if (sessionState.es) {
                 sessionState.es.close();
-                sessionState.currentEventSource = null;
+              sessionState.es = null;
             }
             if (sessionState.resolveFunc) {
                 sessionState.resolveFunc({ finished: hasFinish });
@@ -1392,14 +1402,11 @@
                             chatContainer.scrollTop = chatContainer.scrollHeight;
                         } else if (msg.type === 'partial') {
                             if (msg.content) {
-                                // 显示普通文本（过滤掉 toolcall 标签）
-                                //const cleanText = msg.content.replace(/<[\/]?toolcall[^>]*>/g, '');
-                                if (cleanText) {
-                                    textDiv.textContent += cleanText;
-                                    chatContainer.scrollTop = chatContainer.scrollHeight;
-                                }
+                            // 原始内容不做过滤，显示层只替换已完整生成的 toolcall。
                                 rawBuffer += msg.content;
                                 sessionState.rawBuffer = rawBuffer;
+                            textDiv.textContent = formatStreamText(rawBuffer);
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
                             }
                         } else if (msg.type === 'command') {
                             if (msg.command) {
@@ -1470,11 +1477,6 @@
                 if (result.finished) {
                     addMessage('assistant', '✅ 任务已全部完成。');
                     break;
-                }
-                console.log(sssfinished);
-                while(1){
-                    if(sssfinished)break;
-                    else console.log(sssfinished);
                 }
                 // 否则继续下一轮
             }
