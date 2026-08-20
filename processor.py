@@ -141,26 +141,30 @@ class TaskAgent:
 
     def add_command_result(self, command: str, success: bool, output: str):
         """前端执行命令后调用此方法将结果加入对话"""
-        result_msg = f"执行命令: {command}\n结果: {'成功' if success else '失败'}\n输出: {output[:500]}"
-        self.messages.append({"role": "assistant", "content": result_msg})
+        result_msg = f"执行命令: {command}\n结果: {'成功' if success else '失败'}\n输出: {output}"
+        self.messages.append({"role": "tool", "content": result_msg})
         save_conversation(self.session_id, self.messages)
 
     def generate_next_command(self, enable_thinking: bool = False) -> Generator[Dict, None, None]:
         messages = [{"role": "system", "content": AITIPS}] + self.messages
-        messages.append({"role": "user", "content": "请输出下一步需要执行的命令（使用 <toolcall> 格式）或 <-----FINISH----->并总结。"})
+        messages.append({"role": "system", "content": "请输出下一步需要执行的命令（使用 <toolcall> 格式）或 输出<-----FINISH----->并总结。"})
 
         full_response = ""
+        reas_content=""
         for chunk in stream_ask(messages, enable_thinking=enable_thinking):
             #print(chunk)
             if chunk['type'] == 'thinking':
+                reas_content+=chunk['content']
                 yield {'type': 'thinking', 'content': chunk['content']}
             else:
                 full_response += chunk['content']
                 yield {'type': 'partial', 'content': chunk['content']}
-        print(full_response)
+        #print(full_response)
+        self.messages.append({"role":"assistant","content":full_response})
+        save_conversation(self.session_id,self.messages)
         commands = self._parse_commands(full_response)
 
-        print(commands)
+        #print(commands)
         if commands and len(commands) > 0:
             for cmd in commands:
                 yield {'type': 'command', 'command': cmd}
